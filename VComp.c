@@ -7,6 +7,10 @@
 #include <fcntl.h>
 #include <string.h>
 #include <semaphore.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <semaphore.h>
+#include <string.h>
 
 #define SEMAPHORES 1
 
