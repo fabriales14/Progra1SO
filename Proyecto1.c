@@ -7,13 +7,13 @@
 #include <fcntl.h>
 #include <string.h>
 
-int crearMrMeeseek(int N, int i, char* tarea, float tiempo, int dificultad);
+int resolverTarea(char* tarea, float tiempo, int dificultad);
 int resolver(int probExito);
 
 int main() {
   srand(time(NULL)); // se necesita para generar randoms diferentes
   char tarea[100], c, buffer[100];
-  int dificultad, contador=0, instancia=1, p[2], readbytes;
+  int dificultad, contador=0, instancia=1, p[2], readbytes, resuelto;
   float tiempo;
   pipe(p);
   printf("Ingrese la tarea a realizar\n");
@@ -47,37 +47,48 @@ int main() {
     }
     wait(NULL);
   } else if (dificultad > 45 && dificultad <= 85){
-    contador++;
-    crearMrMeeseek(contador, instancia, tarea, tiempo, dificultad);
-    contador++;
-    crearMrMeeseek(contador, instancia, tarea, tiempo, dificultad);
+    resolverTarea(tarea, tiempo, dificultad);
   } else {
 
   }
   return 0;
 }
 
-int crearMrMeeseek(int N, int i, char* tarea, float tiempo, int dificultad){
+int resolverTarea(char* tarea, float tiempo, int dificultad){
   char buffer[100];
-  int p[2], readbytes;
+  int p[2], readbytes, contador=0, instancia=1;
   pipe(p);
-  if (fork() == 0){
-    close(p[1]); // cerrar lado de escritura del pipe
-    readbytes = read(p[0], buffer, sizeof(buffer)); // lee la tarea
-    close(p[0]);
-    printf("Hi I'm Mr Meeseeks! Look at Meeeee. (%d, %d, %d, %d)\n", getpid(), getppid(), N, i);
-    printf("Resolving request (%s)\n", buffer);
-    sleep(tiempo);
-    if (resolver(dificultad) == 1){
-      printf("The request has been solved by MEEE! (%d, %d, %d, %d)\n", getpid(), getppid(), N, i);
-      return 1;
+  int p1,p2;
+  while (contador < 2){
+    p1 = fork();
+    contador++;
+    if (p1 != 0){
+      close(p[0]); //cerrar lado de lectura del pipe
+      write(p[1], tarea, sizeof(tarea)); // escritura de la tarea
+      close(p[1]);
+      p2 = fork();
+      if (p2 == 0){
+        close(p[1]); // cerrar lado de escritura del pipe
+        readbytes = read(p[0], buffer, sizeof(buffer)); // lee la tarea
+        close(p[0]);
+        printf("Hi I'm Mr Meeseeks! Look at Meeeee. (%d, %d, %d, %d)\n", getpid(), getppid(), contador, instancia+1);
+        printf("Resolving request (%s)\n", buffer);
+        sleep(tiempo);
+      }
     }
-  } else {
-    close(p[0]); //cerrar lado de lectura del pipe
-    write(p[1], tarea, sizeof(tarea)); // escritura de la tarea
-    close(p[1]);
+    if (p1 != 0 && p2 != 0)
+      break;
+    if (p1 == 0){
+      close(p[1]); // cerrar lado de escritura del pipe
+      readbytes = read(p[0], buffer, sizeof(buffer)); // lee la tarea
+      close(p[0]);
+      printf("Hi I'm Mr Meeseeks! Look at Meeeee. (%d, %d, %d, %d)\n", getpid(), getppid(), contador, instancia);
+      printf("Resolving request (%s)\n", buffer);
+      sleep(tiempo);
+    }
   }
-  wait(NULL);
+  waitpid(p1, NULL, 0);
+  waitpid(p2, NULL, 0);
   return 0;
 }
 
