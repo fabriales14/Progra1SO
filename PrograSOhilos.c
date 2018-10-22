@@ -1,4 +1,3 @@
-//implementando hilos
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -8,23 +7,33 @@
 #include <fcntl.h>
 #include <string.h>
 #include <semaphore.h>
-#include <pthread.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <semaphore.h>
+#include <string.h>
 
-void crearMrMeeseek();
-sem_t mutex;// variable global para semaforos
+#define SEMAPHORES 1
+
+int resolverTarea();
+int resolver();
+void enviarMensaje();
+void recibirMensaje();
+void *mmap(void *addr, size_t len, int prot, int flags, int fd,off_t off);
+
+//variables utilizadas por los hijos,padres..
+int *resuelto;
+sem_t *semaforo;    //semaforo
+//
+int dificultad, contador=0, instancia=1, p[2], readbytes;
+float tiempo;
+char tarea[100], c, buffer[100];
 
 int main() {
-  int i;
-  pthread_t tid;
+  resuelto = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  semaforo = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  sem_init (semaforo, 1, 1); //inicio semaforo
+
   srand(time(NULL)); // se necesita para generar randoms diferentes
-  char tarea[100];
-  int dificultad;
-  int contador = 0;
-  int instancia = 1;
-  float tiempo;
-  char c;
-  int p[2], readbytes;
-  char buffer[100];
   pipe(p);
   printf("Ingrese la tarea a realizar\n");
   scanf("%[^\n]s", tarea);
@@ -38,35 +47,97 @@ int main() {
     dificultad = rand() % 101;
   }
   tiempo = ((float)rand()/(float)(RAND_MAX)*5.0);
-  printf("%d\n", dificultad);
-  printf("%f\n", tiempo);
+  if (tiempo < 0.5)
+    tiempo++;
+  printf("The difficulty is %d\n", dificultad);
+  printf("The estimated time is %f\n", tiempo);
   if (dificultad > 85){
-    if (fork()){
+    if (pthread_create(&thread, NULL, recibirMensaje, NULL) != 0){
       contador++;
-      close(p[1]); // cerrar lado de escritura del pipe
-      readbytes = read(p[0], buffer, sizeof(buffer)); // lee la tarea
-      printf("%s\n", buffer);
-      close(p[0]);
-      printf("Hi I'm Mr Meeseeks! Look at Meeeee. (%d, %d, %d, %d)\n", getpid(), getppid(), contador, instancia);
-      pthread_create(&thread_id, NULL, crearMrMeesek, NULL); 
-      printf("Resolving problem... (%d, %d, %d, %d)\n", getpid(), getppid(), contador, instancia);
+      pthread_create(&thread, NULL, recibirMensaje, NULL);
+      printf("Hi I'm Mr Meeseeks! Look at Meeeee. (%d, %d, %d, %d)\n", gettid(), getpid(), contador, instancia);
+      printf("Resolving request (%s)\n", buffer);
       sleep(tiempo);
+      printf("The request has been solved... It has been a pleasure to assist you, BYE!\n");
     } else {
-      close(p[0]); //cerrar lado de lectura del pipe
-      write(p[1], tarea, sizeof(tarea)); // escritura de la tarea
-      close(p[1]);
+      pthread_create(&thread, NULL, enviarMensaje, NULL);
     }
-  }
-  wait(NULL);
-  if(dificutad < 85){
-
+    wait(NULL);
+  } else if (dificultad > 45 && dificultad <= 85){
+    resolverTarea();
+  } else {
+    resolverTarea();
   }
   return 0;
 }
 
-void crearMrMeeseek(){
-  if (fork() == 0){
-    sleep(1);
-    printf("Hi I'm Mr Meeseeks! Look at Meeeee. (%d, %d, %d, %d)\n", getpid(), getppid(), 1, 1);
+int resolverTarea(){
+  while (*resuelto < 100){
+    contador++;
+    if (pthread_create(&thread, NULL, recibirMensaje, NULL) == 0){
+
+      pthread_create(&thread, NULL, recibirMensaje, NULL);
+      pthread_create(&thread, NULL, enviarMensaje, NULL);
+      if (pthread_create(&thread, NULL, enviarMensaje, NULL) == 0){
+        pthread_create(&thread, NULL, recibirMensaje, NULL);
+        printf("Hi I'm Mr Meeseeks! Look at Meeeee. (%d, %d, %d, %d)\n", gettid(), getpid(), contador, instancia+1);
+        printf("Start resolving the request (%s)\n", tarea);
+        printf("Mr. Meeseeks N.%d is working on the request\n", getpid());
+        sleep(tiempo);
+
+        int resultado = resolver();
+        if (resultado)
+          printf("This Mr. Meeseeks N.%d resolved the request\n", getpid());
+      } else {
+        pthread_create(&thread, NULL, enviarMensaje, NULL);
+      }
+    }
+    if (pthread_create(&thread, NULL, recibirMensaje, NULL) == 0 && pthread_create(&thread, NULL, enviarMensaje, NULL) == 0)
+      break;
+    if (pthread_create(&thread, NULL, recibirMensaje, NULL) == 0){
+      pthread_create(&thread, NULL, recibirMensaje, NULL) != 0
+      printf("Hi I'm Mr Meeseeks! Look at Meeeee. (%d, %d, %d, %d)\n", gettid(), getpid(), contador, instancia);
+      printf("Start resolving the request (%s)\n", tarea);
+      printf("Mr. Meeseeks N.%d is working on the request\n", gettid());
+      sleep(tiempo);
+      int resultado = resolver();
+      if (resultado)
+        printf("This Mr. Meeseeks N.%d resolved the request\n", gettid());
+    }
   }
+  waitpid(p1, NULL, 0);
+  waitpid(p2, NULL, 0);
+  return 0;
+}
+
+void enviarMensaje(){
+  printf("Parent PPID:%d sending request with pipe\n", gettid());
+  close(p[0]); //cerrar lado de lectura del pipe
+  write(p[1], tarea, sizeof(tarea)); // escritura de la tarea
+  close(p[1]);
+
+}
+
+void recibirMensaje(){
+  printf("PID:%d receiving request with pipe\n", gettid());
+  close(p[1]); // cerrar lado de escritura del pipe
+  readbytes = read(p[0], buffer, sizeof(buffer)); // lee la tarea
+  close(p[0]);
+}
+
+int resolver(){
+  if (SEMAPHORES)
+      sem_wait(semaforo);// Decrementa el semáforo
+  int prob = rand() % 101;
+  if (prob < dificultad){
+    if (*resuelto > 99)
+      return 0;
+    resuelto += dificultad;
+    if (*resuelto > 99){
+      return 1;
+    }
+  }
+  if (SEMAPHORES)
+    sem_post(semaforo); // incrementa el semáforo
+  return 0;
 }
