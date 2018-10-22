@@ -6,16 +6,33 @@
 #include <time.h>
 #include <fcntl.h>
 #include <string.h>
+#include <semaphore.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <semaphore.h>
+#include <string.h>
+
+#define SEMAPHORES 1
 
 int resolverTarea();
 int resolver();
 void enviarMensaje();
 void recibirMensaje();
-int dificultad, contador=0, instancia=1, resuelto=0, p[2], readbytes;
+void *mmap(void *addr, size_t len, int prot, int flags, int fd,off_t off);
+
+//variables utilizadas por los hijos,padres..
+int *resuelto;
+sem_t *semaforo;    //semaforo
+//
+int dificultad, contador=0, instancia=1, p[2], readbytes;
 float tiempo;
 char tarea[100], c, buffer[100];
 
 int main() {
+  resuelto = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  semaforo = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE,MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  sem_init (semaforo, 1, 1); //inicio semaforo
+
   srand(time(NULL)); // se necesita para generar randoms diferentes
   pipe(p);
   printf("Ingrese la tarea a realizar\n");
@@ -56,10 +73,11 @@ int main() {
 
 int resolverTarea(){
   int p1,p2;
-  while (resuelto < 100){
+  while (*resuelto < 100){
     p1 = fork();
     contador++;
     if (p1 != 0){
+
       enviarMensaje();
       p2 = fork();
       if (p2 == 0){
@@ -68,6 +86,7 @@ int resolverTarea(){
         printf("Start resolving the request (%s)\n", tarea);
         printf("Mr. Meeseeks N.%d is working on the request\n", getpid());
         sleep(tiempo);
+
         int resultado = resolver();
         if (resultado)
           printf("This Mr. Meeseeks N.%d resolved the request\n", getpid());
@@ -98,6 +117,7 @@ void enviarMensaje(){
   close(p[0]); //cerrar lado de lectura del pipe
   write(p[1], tarea, sizeof(tarea)); // escritura de la tarea
   close(p[1]);
+
 }
 
 void recibirMensaje(){
@@ -108,14 +128,18 @@ void recibirMensaje(){
 }
 
 int resolver(){
+  if (SEMAPHORES)
+      sem_wait(semaforo);// Decrementa el semáforo
   int prob = rand() % 101;
   if (prob < dificultad){
-    if (resuelto > 99)
+    if (*resuelto > 99)
       return 0;
     resuelto += dificultad;
-    if (resuelto > 99){
+    if (*resuelto > 99){
       return 1;
     }
   }
+  if (SEMAPHORES)
+    sem_post(semaforo); // incrementa el semáforo
   return 0;
 }
